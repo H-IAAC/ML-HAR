@@ -1,6 +1,8 @@
 # Meta-training for Human-Activity Recogniton (HAR)
 
-These approach is based on the paper:
+These codes implements OML (Online aware Meta-Learning) and MAML-Rep approaches to HAR datasests (PAMAP2, HAPT, UCIHAR, and DSADS)
+
+This approach is based on the paper:
 
 Meta-Learning Representations for Continual Learning by Khurram Javed and Martha White
 
@@ -15,7 +17,6 @@ The code provided by the authors were used as a base to support:
 2) HAR/time series datasets
 3) pipeline to experiment execution, configurable to different combination of parameteres
 4) set of plots, including stats per class, iteration, average, etc.
-
 
 # Main files:
  
