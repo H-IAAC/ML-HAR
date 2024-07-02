@@ -1,0 +1,41 @@
+{
+  "stats overall": [
+    "Train average stats",
+    "Test average stats",
+    "Streaming average"
+  ],
+  "stats classes": [
+    "Train average stats base",
+    "Train average stats new",
+    "Train average stats all",
+    "Test average stats base",
+    "Test average stats new",
+    "Test average stats all",
+    "Streaming average stats base",
+    "Streaming average stats new",
+    "Streaming average stats all"
+
+  ],
+  "Forgetting classes": [
+    "Forgetting train base",
+    "Forgetting train new",
+    "Forgetting train all",
+    "Forgetting test base",
+    "Forgetting test new",
+    "Forgetting test all",
+    "Forgetting Streaming base",
+    "Forgetting Streaming new",
+    "Forgetting Streaming all"    
+  ],
+    "Backward transfer classes": [
+    "Backward transfer train base",
+    "Backward transfer train new",
+    "Backward transfer train all",
+    "Backward transfer test base",
+    "Backward transfer test new",
+    "Backward transfer test all",
+    "Backward transfer Streaming base",
+    "Backward transfer Streaming new",
+    "Backward transfer Streaming all"    
+  ]
+}
