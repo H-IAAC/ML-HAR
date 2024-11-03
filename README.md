@@ -24,8 +24,10 @@ The code provided by the authors were used as a base to support:
 |-------------------------------|----------------------------------------|
 |meta-training.py            | RLN training                              |
 |meta-testing.py             | meta-testing                              |
-|run_meta-testing.py         | runs meta-testing with several encoders   |
-|meta-training_batch.py       | runs batch encoders                       |
+|run_meta-testing.py         | runs meta-testing                         |
+|run_encoders_nc.sh          | runs encoders training                    |
+|run_meta-testing_batch.sh   | runs meta-testing in batch                |
+
 
 # Main directories
  
