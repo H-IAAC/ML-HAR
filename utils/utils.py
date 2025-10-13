@@ -13,13 +13,19 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 import utils.stats as st
 import sys
-import tensorflow as tf
 import json
+import gc
 import gzip
+from math import factorial
+
 
 
 transition = namedtuple('transition', 'state, next_state, action, reward, is_terminal')
 import torch
+
+
+def combination(n, k):
+    return factorial(n) // (factorial(k) * factorial(n - k))
 
 
 def euclidean_dist(x, y):
@@ -56,6 +62,15 @@ def save_json_gz(obj, filename):
     with gzip.open(filename, 'wb') as file:
         file.write(obj_json.encode('utf-8'))
         
+
+def split_list_random(lst):
+    # shuffle a copy of the list
+    shuffled = lst[:]
+    random.shuffle(shuffled)
+    
+    # split in half
+    mid = len(shuffled) // 2
+    return shuffled[mid:], shuffled[:mid]
         
         
 def load_json_gz(filename):
@@ -154,11 +169,9 @@ def log_accuracy_har_v2(maml, my_experiment, iterator_test, device, writer, step
 
     confusion_pred = []
     confusion_act = []
-    print('id_task ', id_task)
-
+    
     for X, Y in iterator_test:
-        print('iterator test inside log_accuracy_har_v2 ', Y)
-
+    
         with torch.no_grad():
             X = X.to(device)
             Y = Y.to(device)
@@ -166,15 +179,18 @@ def log_accuracy_har_v2(maml, my_experiment, iterator_test, device, writer, step
             pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
             confusion_pred += pred_q.tolist()
             confusion_act += Y.tolist()
+            
+                # Free GPU memory
+            del X, Y, logits_q, pred_q
+
+            gc.collect()
+
+            torch.cuda.empty_cache()
          
     labels_pred = sorted(np.unique([confusion_pred, confusion_act]))
     labels_iteration_pred = np.array(list(map(str,  labels_pred)))   
     confusion_mat = pd.DataFrame(confusion_matrix(y_true=confusion_act, y_pred=confusion_pred,labels=labels_pred),index = labels_iteration_pred,columns=labels_iteration_pred)  
-    print('labels_pred' , labels_pred)
-    print('labels_iteration_pred' , labels_iteration_pred)
-    print('before stats')
     stats = st.Stats(confusion_mat, step)
-    print('after stats')
     writer.add_scalar('/metatrain/test/classifier/accuracy', stats.accuracy, step)
     logger.info(id_task + " Accuracy = %s", str(stats.accuracy))
     logger.info(id_task + " Weighted Macro F1-Score = %s", str(stats.f1_scores_weighted))
@@ -398,7 +414,7 @@ def iterator_sorter(trainset, no_sort=True, random=True, pairs=False, classes=10
         if not pairs:
             np.random.shuffle(sorting_keys)
 
-    print("Order = ", [x - 20 for x in sorting_keys])
+
     for numb, key in enumerate(sorting_keys):
         if pairs:
             np.place(sorting_labels, sorting_labels == numb, key - (key % 2))
@@ -406,13 +422,11 @@ def iterator_sorter(trainset, no_sort=True, random=True, pairs=False, classes=10
             np.place(sorting_labels, sorting_labels == numb, key)
 
     indices = np.argsort(sorting_labels)
-    # print(indices)
 
     trainset.data = trainset.data[indices]
     trainset.targets = np.array(trainset.targets)
     trainset.targets = trainset.targets[indices]
-    # print(trainset.targets)
-    # print(trainset.targets )
+
 
     return trainset
 
@@ -560,7 +574,7 @@ def resize_image(img, factor):
 
 
 def get_run(arg_dict, rank=0):
-    # print(arg_dict)
+  
     combinations =[]
 
     if isinstance(arg_dict["seed"], list):
@@ -684,8 +698,21 @@ def sample_subject(data, target, root, group):
     
     return subjects_candidate
 
+'''
+def remove_classes_ucihar(data, target):
+    data = copy.deepcopy(data)  # Deep copy
+    device = data.X.device  # Get device (GPU or CPU)
 
+    # Convert target list to tensor
+    target_tensor = torch.tensor(target, device=device)
 
+    # Create a mask to filter `data.Y`
+    mask = torch.isin(data.Y, target_tensor)  # Efficient way to filter
+    data.X = data.X[mask]  # Apply mask to X
+    data.Y = data.Y[mask]  # Apply mask to Y (already on GPU)
+
+    return data
+'''
 def remove_classes_ucihar(data, target):
 
     data = copy.deepcopy(data)
@@ -1028,9 +1055,7 @@ def sample_meta_updating(X,Y, classes, num_support, num_query, reset, random):
 
     if int(nr_samples) < (num_support + num_query):
        num_support = num_query = int(nr_samples/2)
-    
-    print('num_support ', num_support)
-    print('num_samples ', nr_samples)
+
     for c in classes:
         k = torch.where(Y == c)
 
@@ -1086,7 +1111,6 @@ def sample_meta_updating_v2(X,Y, replay, classes, num_support, num_query, reset,
            classes_samples.append(len(k[0].numpy()))
            classes_support.append(c)
     
-    #print('classes_support ', classes_support)
     
     if len(classes_support) < 2:
        return x_traj, y_traj, x_rand, y_rand
@@ -1167,7 +1191,6 @@ def check_replay_update(updating, device, args):
     # find classes with distribution changed according to the replay strategy
     # returns classes with shift in distribution
     positions = np.where(np.array(updating)[:,1] > 0)
-    print('updating', updating)
     c = []
     if positions[0].size > 0:
         for i in positions[0]:
@@ -1252,9 +1275,6 @@ class ReplayBuffer:
             else:
                 print('strategy not valid')
                 sys.exit()
-
-            print('\n strategy:', strategy)
-            print('keys ', self.replay.keys())
 
     def set_values(self, buffer, buffer_size, strategy, center_strategy, average, size):
         
@@ -1353,7 +1373,6 @@ class ReplayBuffer:
                    
     # if buffer is complete selects 1 replay element to be replaced by 1 element of new sample
     def random_update (self, replay_dict,key):
-        print('random_update')
         value = replay_dict[key]
         data = torch.stack(value) 
           
@@ -1367,13 +1386,10 @@ class ReplayBuffer:
         size_total = self.size[key] + len(replay_dict[key])
         slots = self.buffer_size - nr_elements
         update = 0
-        print('SLOT  ', slots)
         if slots == 0:
             if random.random() > 0.90:
                pos_to_be_replaced = random.sample(range(self.buffer_size), 1)[0]
                pos_to_replace = random.sample(range(len(replay_dict[key])), 1)[0]
-               print(' pos_to_be_replaced ',  pos_to_be_replaced)
-               print(' pos_to_replace ',  pos_to_replace)
                
                self.replay[key][pos_to_be_replaced] = replay_dict[key][pos_to_replace]
                update += 1/self.buffer_size
@@ -1381,9 +1397,7 @@ class ReplayBuffer:
             if slots >  len(replay_dict[key]):
                 slots = len(replay_dict[key]) 
             positions=(random.sample(range(len(replay_dict[key])), slots))
-            print('positions ', positions)
             new_list = [replay_dict[key][index] for index in positions]
-            print('new list ', new_list)
             for  value in new_list:
                  if key in self.replay:
                     self.replay[key].append(value)
@@ -1393,9 +1407,8 @@ class ReplayBuffer:
                  
         # update sample average and number of elements 
         self.average[key] = ((self.size[key]/size_total) * self.average[key]) + ((len(replay_dict[key])/size_total) * data_center)
-        print('average[key]')     
         self.size[key] = size_total  
-        print('size[key]')
+
         return (update)           
    
     def exemplar_sample (self, replay_dict):
@@ -1583,7 +1596,7 @@ class ReplayBuffer:
         
         if c in self.replay.keys(): # if class is already in replay memory : update
            replay_dict = create_dictionary(sample)
-          # print('updating existing class')
+
            if self.strategy=='random':
               fraction_updating = self.random_update(replay_dict, c)
            elif self.strategy == 'exemplar':
@@ -1596,7 +1609,7 @@ class ReplayBuffer:
         else:
            fraction_updating = 1
            replay_dict = create_dictionary(sample)
-           #print('updating new class')
+
            if self.strategy=='random':
                self.random_sample(replay_dict)
            elif self.strategy == 'exemplar':

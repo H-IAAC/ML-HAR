@@ -9,6 +9,11 @@ from torch.nn import functional as F
 from utils.utils import sample_meta_updating, euclidean_dist
 import model.learner as Learner
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau 
+
+
+
+
 
 logger = logging.getLogger("experiment")
 
@@ -173,6 +178,47 @@ class MetaLearnerRegression(nn.Module):
 
         return [first_loss.detach(), final_meta_loss.detach()]
 
+class LayerwiseAdaptiveGradientClip:
+    def __init__(self, alpha=0.0001, beta=0.99):
+        self.alpha = alpha
+        self.beta = beta
+        self.running_norms = {}
+
+    def compute_norm(self, tensor):
+        return tensor.norm(2)
+
+    def update_running_norm(self, layer_name, param_norm):
+        if layer_name not in self.running_norms:
+            self.running_norms[layer_name] = param_norm
+        else:
+            self.running_norms[layer_name] = (
+                self.beta * self.running_norms[layer_name] + (1 - self.beta) * param_norm
+            )
+
+    def clip(self, model):
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                param_norm = self.compute_norm(param.data)
+                               
+                grad_norm = self.compute_norm(param.grad.data)
+
+                # Update running average
+                self.update_running_norm(name, param_norm)
+
+                # Compute adaptive threshold
+                #adaptive_threshold = self.alpha * (self.running_norms[name] + 1e-6)
+                
+                adaptive_threshold = max(self.alpha * (self.running_norms[name] + 1e-6), 1e-4)
+
+                # Clip if gradient norm exceeds the adaptive threshold
+                if grad_norm > adaptive_threshold:
+                    scale = adaptive_threshold / (grad_norm + 1e-6)
+                    param.grad.data.mul_(scale)
+                    
+                norm = param.grad.data.norm(2)  # L2 norm
+                if norm > 0:
+                    param.grad.data.div_(norm)      
+
 
 class MetaLearingClassification(nn.Module):
     """
@@ -190,7 +236,33 @@ class MetaLearingClassification(nn.Module):
 
         self.net = Learner.Learner(config)
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.meta_lr)
+        
+        #self.optimizer = optim.Adam(self.net.parameters(), lr=self.meta_lr,weight_decay=1e-5 )
+        
+        #original
+        #self.optimizer = optim.Adam(self.net.parameters(), lr=self.meta_lr,weight_decay=1e-5 )
+        
+        
+        #Use AdamW with weight decay:
 
+        #optimizer = torch.optim.AdamW(self.net.parameters(), lr=self.meta_lr, weight_decay=1e-4)
+        
+        #self.scheduler = StepLR(self.optimizer, step_size=30, gamma=0.1) 
+        
+        
+        #scheduler = ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=10)
+
+        self.clip = args['clip']
+        self.clip_value = args['clip_value']
+        
+        self.clip_inner = args['clip_inner']
+        self.clip_outer = args['clip_outer']
+        
+        
+        self.lagc = LayerwiseAdaptiveGradientClip(alpha=0.01, beta=0.99)
+        #self.lagc = LayerwiseAdaptiveGradientClip(alpha=0.1, beta=0.99)
+
+               
     def reset_classifer(self, class_to_reset):
         bias = self.net.parameters()[-1]
         weight = self.net.parameters()[-2]
@@ -318,6 +390,84 @@ class MetaLearingClassification(nn.Module):
         
 
 
+    def select_samples2train_newProtocol(self, iterator_trajectory, classes, iterator_random, know_classes, num_support, num_query, reset, model): 
+
+     # Sample data for inner and meta updates
+
+        x_traj, y_traj, x_rand, y_rand = [], [], [], []
+
+           
+        dataset_trajectory = iterator_trajectory
+        
+        dataset_random = iterator_random
+        
+              
+        for i in classes:
+            
+            nr_samples_classe = num_support
+            
+            k = torch.where(dataset_trajectory.Y == i)
+            
+            data = k[0].numpy()
+           
+            if len(data) < num_support:
+               nr_samples_classe = len(data) 
+            
+            sample_positions = np.random.choice(len(data),nr_samples_classe,replace=False)
+            
+            count = 0
+                     
+            for j in sample_positions:
+                if reset:
+                 # Resetting weights corresponding to classes in the inner updates; this prevents
+                 # the learner from memorizing the data (which would kill the gradients due to inner updates)
+                     self.reset_classifer(i)
+           
+                if count < nr_samples_classe:
+                     x_traj.append(dataset_trajectory.X[data[j]])
+                     y_traj.append(dataset_trajectory.Y[data[j]])
+                     count += 1;
+                     
+            k = torch.where(dataset_random.Y == i)
+            
+            data = k[0].numpy()
+
+            if len(data) < nr_samples_classe:
+               #nr_samples_classe = len(data) 
+               raise Exception(f"Number of random class samples {len(data)} less than trajectory: {nr_samples_classe}, for class {i}")
+
+            
+            sample_positions = np.random.choice(len(data),nr_samples_classe,replace=False)
+            count = 0
+            for j in sample_positions:
+                if count < nr_samples_classe:
+                   x_rand.append(dataset_random.X[data[j]])
+                   y_rand.append(dataset_random.Y[data[j]])
+       
+        # Sampling know classes to random
+        if model == 'oml':
+            not_tasks_classes = list(set(know_classes) - set(classes))       
+            for i in not_tasks_classes:
+                k = torch.where(dataset_random.Y == i)
+                data = k[0].numpy()
+                sample_positions = np.random.choice(len(data),1,replace=False)
+                for j in sample_positions:
+                    x_rand.append(dataset_random.X[data[j]])
+                    y_rand.append(dataset_random.Y[data[j]])
+             
+          
+        x_rand = torch.stack(x_rand).unsqueeze(0)
+   
+        y_rand = torch.stack(y_rand).unsqueeze(0)
+   
+
+        x_traj = torch.stack(x_traj).unsqueeze(1)
+        y_traj = torch.stack(y_traj).unsqueeze(1)
+
+
+        return x_traj, y_traj, x_rand, y_rand    
+    
+    
     def sample_training_data(self, iterators, it2, steps=2, reset=True):
 
         # Sample data for inner and meta updates
@@ -423,16 +573,22 @@ class MetaLearingClassification(nn.Module):
 
         return x_traj, y_traj, x_rand, y_rand
 
-    def inner_update(self, x, fast_weights, y):
+    def inner_update_no_clip(self, x, fast_weights, y):
+        
         adaptation_weight_counter = 0
 
         logits = self.net(x, fast_weights)
         loss = F.cross_entropy(logits, y)
+  
+       
         if fast_weights is None:
             fast_weights = self.net.parameters()
-
+            
+ 
         grad = torch.autograd.grad(loss, self.net.get_adaptation_parameters(fast_weights),
-                                   create_graph=True)
+                                       create_graph=True)
+        
+        #Use first-order approximation (FOMAML) by setting create_graph=False:
 
         new_weights = []
         for p in fast_weights:
@@ -447,11 +603,63 @@ class MetaLearingClassification(nn.Module):
                 new_weights.append(p)
 
         return new_weights
-
+   
+    def inner_update(self, x, fast_weights, y):
+        adaptation_weight_counter = 0
+    
+        logits = self.net(x, fast_weights)
+        loss = F.cross_entropy(logits, y)
+    
+        if fast_weights is None:
+            fast_weights = self.net.parameters()
+    
+        # Compute gradients
+        grad = torch.autograd.grad(loss, self.net.get_adaptation_parameters(fast_weights), create_graph=True)
+        #Use first-order approximation (FOMAML) by setting create_graph=False:
+        # Clip gradients using LayerwiseAdaptiveGradientClip
+        clipped_grad = []
+        for p in fast_weights:
+            if p.adaptation:  # Only process adaptation parameters
+                g = grad[adaptation_weight_counter]
+                # Compute norms and clip the gradient
+                param_norm = self.lagc.compute_norm(p.data)
+                grad_norm = self.lagc.compute_norm(g)
+                # Use a unique identifier for the parameter (e.g., its memory address) since we don't have the name
+                param_id = id(p)
+                self.lagc.update_running_norm(param_id, param_norm)
+                adaptive_threshold = max(self.lagc.alpha * (self.lagc.running_norms[param_id] + 1e-6), 1e-4)
+                if grad_norm > adaptive_threshold:
+                    scale = adaptive_threshold / (grad_norm + 1e-6)
+                    g = g * scale
+                '''
+                norm = g.norm(2)  # L2 norm
+                if norm > 0:
+                   g = g / norm  # Normalize gradient to have unit norm
+                '''
+                clipped_grad.append(g)
+                adaptation_weight_counter += 1
+    
+        # Update fast weights with clipped gradients
+        new_weights = []
+        adaptation_weight_counter = 0
+        for p in fast_weights:
+            if p.adaptation:
+                g = clipped_grad[adaptation_weight_counter]
+                temp_weight = p - self.update_lr * g
+                temp_weight.adaptation = p.adaptation
+                temp_weight.meta = p.meta
+                new_weights.append(temp_weight)
+                adaptation_weight_counter += 1
+            else:
+                new_weights.append(p)
+    
+        return new_weights 
+       
     def meta_loss(self, x, fast_weights, y):
 
         logits = self.net(x, fast_weights)
         loss_q = F.cross_entropy(logits, y)
+
         return loss_q, logits
 
     def eval_accuracy(self, logits, y):
@@ -459,6 +667,9 @@ class MetaLearingClassification(nn.Module):
         correct = torch.eq(pred_q, y).sum().item()
         return correct
 
+
+
+    
     def forward(self, x_traj, y_traj, x_rand, y_rand):
         """
         :param x_traj:   Input data of sampled trajectory
@@ -469,16 +680,20 @@ class MetaLearingClassification(nn.Module):
         """
 
         meta_losses = [0 for _ in range(len(x_traj) + 1)]  # losses_q[i] is the loss on step i
-        accuracy_meta_set = [0 for _ in range(len(x_traj) + 1)]
+        accuracy_meta_set = [0 for _ in range(len(x_traj) + 1)] 
 
-        # Doing a single inner update to get updated weights
-        fast_weights = self.inner_update(x_traj[0], None, y_traj[0])
+        if self.clip_inner:            
+            fast_weights = self.inner_update(x_traj[0], None, y_traj[0])
+        else:
+            fast_weights = self.inner_update_no_clip(x_traj[0], None, y_traj[0])
 
+    
         with torch.no_grad():
             # Meta loss before any inner updates
+            
             meta_loss, last_layer_logits = self.meta_loss(x_rand[0], self.net.parameters(), y_rand[0])
             meta_losses[0] += meta_loss
-
+            
             classification_accuracy = self.eval_accuracy(last_layer_logits, y_rand[0])
             accuracy_meta_set[0] = accuracy_meta_set[0] + classification_accuracy
 
@@ -490,13 +705,17 @@ class MetaLearingClassification(nn.Module):
             accuracy_meta_set[1] = accuracy_meta_set[1] + classification_accuracy
 
         for k in range(1, len(x_traj)):
-            # Doing inner updates using fast weights
-           
-            fast_weights = self.inner_update(x_traj[k], fast_weights, y_traj[k])
-               
-            # Computing meta-loss with respect to latest weights
-            meta_loss, logits = self.meta_loss(x_rand[0], fast_weights, y_rand[0])
             
+            # Doing inner updates using fast weights
+            if self.clip_inner: 
+               fast_weights = self.inner_update(x_traj[k], fast_weights, y_traj[k])
+            else:
+               fast_weights = self.inner_update_no_clip(x_traj[k], fast_weights, y_traj[k])
+                          
+            # Computing meta-loss with respect to latest weights
+            
+            meta_loss, logits = self.meta_loss(x_rand[0], fast_weights, y_rand[0])
+
             meta_losses[k + 1] += meta_loss
             
             # Computing accuracy on the meta and traj set for understanding the learning
@@ -511,12 +730,22 @@ class MetaLearingClassification(nn.Module):
         meta_loss = meta_losses[-1]
    
         meta_loss.backward()
+        
+        if self.clip_outer:
+            
+            self.lagc.clip(self.net)
+            #torch.nn.utils.clip_grad_value_(self.net.parameters(), clip_value=self.clip_value)
+            #torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.clip_value)
 
+        
         self.optimizer.step()
         
         accuracies = np.array(accuracy_meta_set) / len(x_rand[0])
 
         return accuracies, meta_losses
+    
+    
+        
     
     def meta_update(self, x_traj, y_traj, x_rand, y_rand):
         """
@@ -543,6 +772,13 @@ class MetaLearingClassification(nn.Module):
         
         self.optimizer.zero_grad()
         meta_loss.backward()
+        
+        if self.clip:
+            self.lagc.clip(self.net)
+            #torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.clip_value)
+            
+            #torch.nn.utils.clip_grad_value_(self.net.parameters(), clip_value=1.0)
+        
         self.optimizer.step()    
 
         return meta_loss
@@ -607,35 +843,15 @@ class Protonet(nn.Module):
                        xq.view(n_class * n_query, *xq.size()[2:])], 0)
         
         
-        
-        # print(len(x_traj))
-        #teste = self.net(x)
-
         x_mod = x.squeeze(dim=1)
         z = self.net(x_mod)
         print('z.shape() ', z.shape)
-        ''' 
-        z = None
-        for k in range(0, len(x)):
-            # Doing inner updates using fast weights
-            #fast_weights = self.inner_update(x[k], fast_weights)
-            fast_weights = self.net.parameters()
-            weights = self.net(x[k], fast_weights)
-            if z is None:
-               z = weights.unsqueeze(0)
-            else:    
-               z = torch.cat((z, weights.unsqueeze(0)), dim=0)
-        '''
+
         z_dim = z.size(-1)
-        #print('z_dim ', z_dim)
 
         z_proto = z[:n_class*n_support].view(n_class, n_support, z_dim).mean(1)
-        #print(z_proto[0])
+
         zq = z[n_class*n_support:].squeeze(dim=1)
-        
-        #print('z_proto shape ', z_proto.shape)
-        
-        #print('zq shape ', zq.shape)
 
         dists = euclidean_dist(zq, z_proto)
         
@@ -661,7 +877,6 @@ class Protonet(nn.Module):
   
         self.optimizer.step() 
 
- 
         return loss_val.item(), acc_val.item()
 
     def select_samples2train_new(self, iterator, classes, iterator_random, classes_random, num_support, num_query, random, reset): 
@@ -703,6 +918,8 @@ class Protonet(nn.Module):
         x_rand = torch.cat(x_rand, dim=0)
    
         return x_traj, x_rand      	  
+
+
     
 
 def main():

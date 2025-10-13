@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Created on Tue May 23 17:03:29 2023
 
+@author: ic-unicamp
+"""
 
 import numpy as np
 
@@ -22,6 +26,8 @@ class Stats:
             self.macro_precision = []
             self.macro_f1 = []
             self.micro_f1 =  []
+            self.precision_micro = []
+            self.recall_micro = []
             
         else:    
             
@@ -29,16 +35,18 @@ class Stats:
             
             correct_predictions = np.trace(confusion_matrix)
             
+            self.accuracy = correct_predictions / total_samples.sum()
+            
             self.step = step
                       
             self.labels = confusion_matrix.columns
             
            
-            self.accuracy = correct_predictions / total_samples.sum()
             
-            self.precisions = np.zeros(len(confusion_matrix))
-            self.recalls = np.zeros(len(confusion_matrix))
-            self.f1_scores  =  np.zeros(len(confusion_matrix))
+            num_classes = confusion_matrix.shape[0]
+            self.precisions = np.zeros(num_classes)
+            self.recalls = np.zeros(num_classes)
+            self.f1_scores  =  np.zeros(num_classes)
     
     
             if (confusion_matrix.sum(axis=0).any()):
@@ -65,20 +73,40 @@ class Stats:
                self.f1_scores = 2 * (self.precisions * self.recalls) / (self.precisions + self.recalls)
             
             
+            # Support
             
             self.support = confusion_matrix.sum(axis=1)/total_samples.sum()
             
-            self.f1_scores_weighted_classes = self.f1_scores*self.support
+            # Weighted F1 scores
+ 
+            self.f1_scores_weighted_classes = self.f1_scores * self.support
+            self.f1_scores_weighted = np.sum(self.f1_scores * self.support)             
             
-            self.f1_scores_weighted = np.sum(self.f1_scores*self.support) # /np.sum(self.support)
-            
+            # Macro averages
+                        
             self.macro_accuracy = np.mean(self.accuracy) 
             self.macro_recall = np.mean(self.recalls) 
             self.macro_precision = np.mean(self.precisions)
             self.macro_f1 = np.mean(self.f1_scores)
-    
+
+            # Micro avegares       
        
-            self.micro_f1 =  np.sum(np.diag(confusion_matrix)) / total_samples.sum()
+            # Micro F1 (aggregated precision and recall)
+            
+            true_positives_sum = np.diag(confusion_matrix).sum()
+                     
+            false_positives_sum = np.sum(confusion_matrix.sum(axis=0) - np.diag(confusion_matrix))
+
+            false_negatives_sum = np.sum(confusion_matrix.sum(axis=1) - np.diag(confusion_matrix))
+
+
+            self.precision_micro = true_positives_sum / (true_positives_sum + false_positives_sum)
+            self.recall_micro = true_positives_sum / (true_positives_sum + false_negatives_sum)
+            if (self.precision_micro + self.recall_micro) > 0:
+                self.micro_f1 = 2 * (self.precision_micro * self.recall_micro) / (self.precision_micro + self.recall_micro)
+            else:
+                self.micro_f1 = 0
+            
   
 
     def get_f1(self, weighted=False, macro=True):

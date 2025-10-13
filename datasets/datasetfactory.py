@@ -70,7 +70,24 @@ class DatasetFactory:
                              24: 'rope jumping'}, 
                 "path": path } 
                ]      
- 
+        elif dataset == "pamap2_v2":
+              return [
+                 {"name": "pamap2_v2", "pamap2_v2": "HumanActivityRecognition", "sensors":  31, "time_window": 5.2, "freq":20, "data_points": int(5.2 * 20),"data_size": (31, int(5.2*20)),
+                 "labels_id": {1:'lying',2:'sitting',3:'standing',4: 'walking',5: 'running',6: 'cycling',7: 'Nordic walking',
+                              9: 'watching TV', 10: 'computer work',11: 'car driving', 12: 'ascending stairs', 13:'descending stairs',
+                              16: 'vacuum cleaning',17: 'ironing',18: 'folding laundry',19: 'house cleaning',20:'playing soccer',
+                              24: 'rope jumping'}, 
+                 "path": path } 
+                ]    
+        elif dataset == "pamap2_100":
+             return [
+                {"name": "pamap2_100", "pamap2_100": "HumanActivityRecognition", "sensors":  31, "time_window": 5.2, "freq":100, "data_points": int(5.2 * 100),"data_size": (31, int(5.2*100)),
+                "labels_id": {1:'lying',2:'sitting',3:'standing',4: 'walking',5: 'running',6: 'cycling',7: 'Nordic walking',
+                             9: 'watching TV', 10: 'computer work',11: 'car driving', 12: 'ascending stairs', 13:'descending stairs',
+                             16: 'vacuum cleaning',17: 'ironing',18: 'folding laundry',19: 'house cleaning',20:'playing soccer',
+                             24: 'rope jumping'}, 
+                "path": path } 
+               ]    
         else:
             print("Unsupported dataset; either implement the dataset or choose a different dataset")
             assert (False)

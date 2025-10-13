@@ -26,6 +26,8 @@ class Parser(configargparse.ArgParser):
         self.add('--batch_size', help='batch size learning', default=[20], type=int)
         self.add('--json_config', help='json config to stats generation',default="/configs/online_stats.json" )
         
+        
+        
 
         self.add('--schedule', type=str, nargs='+', default="10",
                                help='Decrease learning rate at these epochs.')
@@ -38,12 +40,41 @@ class Parser(configargparse.ArgParser):
         self.add('--model-path', nargs='+', type=str, help='path to trained model', default=None)
         self.add('--model', nargs='+', type=str, help='model id: maml, oml, proto', default='oml')
         self.add('--dataset_path', nargs='+', type=str, help='root path to dataset files', default=None)
-        self.add('--scenario', help= 'nic or nc scenario', default='nc' )
+        self.add('--scenario', help= 'nic or nc scenario', default='nic' )
+        self.add('--replay', help= 'use of replay memorey', action="store_true")
+        self.add('--replay_update', help= 'update replay online', action="store_true")
+        self.add('--replay_strategy',  help= 'replay strategy', type=str, default = None)
+        self.add('--encoder_update', help= 'update encoder online', action="store_true")
+        self.add('--encoder_replay', help= 'update encoder online using replay data', action="store_true")
+        
+        self.add('--encoder_strategy', help= 'when encoder will be updated with replay or all', default="replay")
+        self.add('--encoder_classes', help= 'which classes using to encoder update updated replay or all', default="all")     
 
+        self.add('--encoder_linear', help= 'update weights', action="store_true")
+        self.add('--encoder_ML', help= 'only ML', action="store_true")
+        self.add('--only_ML', help= 'only ML', action="store_true")
         
         self.add('--plot', help= 'generating plots', action="store_true")
-        self.add('--plot_file', help= 'running file for plotting ', type=str, default = 'plot_meta-testing.py')
+        self.add('--plot_file', help= 'running file for plotting ', type=str, default = 'plot_online.py')
 
         
 
+         #stop criteria
+         
+        self.add('--stop_training', help= 'patience criteria ',action="store_true")
+        self.add('--stop_criteria', help= 'stop criteria [average = norm average or iteration = number of iteration without changes/', type=str, default='average')
+        self.add('--patience_threshold', help= 'patience threshold', type=int, default = 15)
+        self.add('--grad_norm_threshold', nargs='+', type=float, help='gradient norm value limit', default=[1e-5])
+        self.add('--grad_norm_change', nargs='+', type=float, help='gradient norm change', default=[1e-1])
+        self.add('--clip',help= 'if clip gradient ',action="store_true")
+        self.add('--clip_value', nargs='+', type=float, help='clip value', default=20.0)
+         
+        self.add('--clip_inner',help= 'if clip gradient ',action="store_true")
+        self.add('--clip_outer',help= 'if clip gradient ',action="store_true")
+        self.add('--adaptive_clip',help= 'if clip value is adaptive',action="store_true")
+        
 
+        self.add('--lr_evaluation', help= 'evaluate reducing lr ',action="store_true")
+        self.add('--lr_evaluation_step', help= 'step to evaluate reducing lr', type=int, default = 30)
+        self.add('--lr_decreasing_factor', help= 'lr decreasing factor', type=int, default = 0.01)
+        self.add('--norm_explosion_threshold', nargs='+', type=float, help='gradient norm value limit', default=[1e2])   
