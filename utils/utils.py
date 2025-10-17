@@ -698,21 +698,7 @@ def sample_subject(data, target, root, group):
     
     return subjects_candidate
 
-'''
-def remove_classes_ucihar(data, target):
-    data = copy.deepcopy(data)  # Deep copy
-    device = data.X.device  # Get device (GPU or CPU)
 
-    # Convert target list to tensor
-    target_tensor = torch.tensor(target, device=device)
-
-    # Create a mask to filter `data.Y`
-    mask = torch.isin(data.Y, target_tensor)  # Efficient way to filter
-    data.X = data.X[mask]  # Apply mask to X
-    data.Y = data.Y[mask]  # Apply mask to Y (already on GPU)
-
-    return data
-'''
 def remove_classes_ucihar(data, target):
 
     data = copy.deepcopy(data)
@@ -725,6 +711,99 @@ def remove_classes_ucihar(data, target):
     data.Y = torch.from_numpy(data.Y[index])
 
     return data
+
+
+def union_data(A, B):
+    """
+    Returns the union of two datasets A and B.
+    Assumes both have attributes X and Y.
+
+    Parameters:
+        A, B: objects with attributes X and Y
+
+    Returns:
+        data_union: new object containing all samples from A and B
+    """
+    # Deep copy A to use it as a base for the merged dataset
+    data_union = copy.deepcopy(A)
+    
+    # Concatenate X (supports both numpy arrays and torch tensors)
+    if isinstance(A.X, torch.Tensor):
+        data_union.X = torch.cat((A.X, B.X), dim=0)
+    else:
+        data_union.X = np.concatenate((A.X, B.X), axis=0)
+
+    # Concatenate Y (ensure both are tensors)
+    Y_A = A.Y if isinstance(A.Y, torch.Tensor) else torch.from_numpy(np.array(A.Y))
+    Y_B = B.Y if isinstance(B.Y, torch.Tensor) else torch.from_numpy(np.array(B.Y))
+    data_union.Y = torch.cat((Y_A, Y_B), dim=0)
+
+    return data_union
+
+
+def add_data(A, B):
+    """
+    Adds all samples from dataset B into dataset A (in place).
+    Both datasets must have attributes X and Y.
+
+    Parameters:
+        A, B: objects with attributes X and Y
+
+    Returns:
+        A: the same object, now containing data from both A and B
+    """
+    # Concatenate X (supports both numpy arrays and torch tensors)
+    if isinstance(A.X, torch.Tensor):
+        A.X = torch.cat((A.X, B.X), dim=0)
+    else:
+        A.X = np.concatenate((A.X, B.X), axis=0)
+
+    # Concatenate Y (ensure both are torch tensors)
+    Y_A = A.Y if isinstance(A.Y, torch.Tensor) else torch.from_numpy(np.array(A.Y))
+    Y_B = B.Y if isinstance(B.Y, torch.Tensor) else torch.from_numpy(np.array(B.Y))
+    A.Y = torch.cat((Y_A, Y_B), dim=0)
+
+    return A
+
+
+
+def split_data_fraction(data, f):
+    """
+    Split data into two random disjunt subsets:
+    A with fraction f and B with the remaining.
+    
+    Parameters:
+        data: har class
+        f: fraction (0 < f < 1)
+    
+    Return:
+        A, B: two new subsets 
+    """
+    # validation
+    assert 0 < f < 1, "Fraction f must be [0..1]"
+    data = copy.deepcopy(data)
+
+    n = len(data.Y)
+    indices = np.arange(n)
+    np.random.shuffle(indices)
+
+    # random index
+    n_A = int(f * n)
+    idx_A = indices[:n_A]
+    idx_B = indices[n_A:]
+
+    # Create set A
+    A = copy.deepcopy(data)
+    A.X = data.X[idx_A]
+    A.Y = torch.from_numpy(np.array(data.Y)[idx_A])
+
+    # Creat set B
+    B = copy.deepcopy(data)
+    B.X = data.X[idx_B]
+    B.Y = torch.from_numpy(np.array(data.Y)[idx_B])
+
+    return A, B
+
 
 def compute_forgetting(stats,  classes_to_keep, args):
    

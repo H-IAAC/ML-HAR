@@ -16,7 +16,7 @@ import utils.utils as utils
 from utils.utils import sample_subject,sample_metatest_data, prepare_json_stats, ReplayBuffer, prepare_json_dataset
 from experiment.experiment import experiment
 from model.meta_learner import MetaLearingClassification
-from datasets.utils import  standardization_pass_fail_all_modes, check_standardization_adapter_all_modes, to_numpy_3d, standarize_data
+from datasets.utils import  standardization_pass_fail_all_modes, check_standardization_adapter_all_modes, to_numpy_3d, standarize_data 
 from datasets.har_teste import  get_dataloaders
 from datasets.augmentation import TimeSeriesAugmenter
 
@@ -286,8 +286,29 @@ def main():
             print('\ndataset random classes',np.unique((dataset_random.Y).numpy()))
         else:
             dataset_random= ''
-       
+    
+        # for metagcd create dataset_pretraining with a fraction f of random dataset and the fraction f-1 is add to  dataset_trajectory to training
+        if args['model'] == 'metagcd':
+           if not args['random']:
+             assert("for metagcd random must be true.")
              
+           print('\ndataset dataset_trajectory size before split', dataset_trajectory.Y.shape) 
+           print('\ndataset dataset_random size before split', dataset_random.Y.shape) 
+           
+           dataset_pretraining, dataset_training = utils.split_data_fraction(dataset_random, 0.5) 
+           
+           dataset_trajectory = utils.add_data(dataset_trajectory, dataset_training) # training
+           
+           print('\nApós split dados para metagcd')
+           
+           print('\ndataset dataset_trajectory classes after split',np.unique((dataset_trajectory.Y).numpy()))
+           print('\ndataset dataset_trajectory size after split', dataset_trajectory.Y.shape)
+           
+           
+           print('\ndataset dataset_pretraining classes after split',np.unique((dataset_pretraining.Y).numpy()))
+           print('\ndataset dataset_pretraining size after split',dataset_pretraining.Y.shape)
+          
+          
         # PREPARES DATA EVALUATION
          
         
@@ -399,6 +420,7 @@ def main():
 
             t = maml.select_classes2train(classes_trajectory , args['tasks'])
             
+
 
             x_spt, y_spt, x_qry, y_qry = maml.select_samples2train_new(dataset_trajectory, t, dataset_random, 
                                                                        classes_random,

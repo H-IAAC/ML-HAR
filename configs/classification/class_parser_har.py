@@ -18,8 +18,8 @@ class Parser(configargparse.ArgParser):
         self.add('--seed', nargs='+', help='Seed', default=[90], type=int)
         self.add("--new_seed",help='datetime seed', action="store_true")
         self.add('--name', help='Name of experiment', default="encoders")
-        self.add('--model', help='Name of experiment', default="maml")
-        
+        self.add('--model', help='Name of experiment', default="metagcd") #maml, oml, metagcd
+                
         self.add('--meta_lr', nargs='+', type=float, help='meta-level outer learning rate', default=[5e-4]) # [1e-3]) #[5e-4])  #0.0001
         self.add('--update_lr', nargs='+', type=float, help='task-level inner update learning rate', default=[0.001])
         self.add('--update_step', nargs='+', type=int, help='task-level inner update steps', default=[10]) # trajectory
@@ -85,7 +85,6 @@ class Parser(configargparse.ArgParser):
         #standardization 
         
         self.add('--standardization_mode', help= 'standardization mode', type=str, default = 'channel') # channel, timestep, timestep_pooled, window_samplewise
-        
         self.add('--time_cut_ratio', help= 'lr decreasing factor', type=int, default = 0.90) # for channel only
         self.add('--eps', help= 'lr decreasing factor', type=float, default = 1e-8) 
         self.add('--tol_mean', help= 'lr decreasing factor', type=float, default = 0.5)
